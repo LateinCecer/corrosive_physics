@@ -6,7 +6,7 @@ use crate::volume::{BoundingVolume, BVIntersector};
 
 /// An implementation for an oriented bounding box
 pub struct OBB<T> {
-    half_size: Vector3<T>,
+    pub half_size: Vector3<T>,
     pub transform: Transformer<T>
 }
 
@@ -22,8 +22,8 @@ impl<T: BaseFloat> BoundingVolume<T, 3> for OBB<T> {
     }
 
     fn min(&self) -> Vector3<T> {
-        let min = self.transform.trafo_point(&self.half_size);
-        let max = self.transform.trafo_point(&(-self.half_size));
+        let min = self.transform.trafo_point(&(-self.half_size));
+        let max = self.transform.trafo_point(&self.half_size);
         Vector3::new(
             T::min(min.x, max.x),
             T::min(min.y, max.y),
@@ -32,8 +32,8 @@ impl<T: BaseFloat> BoundingVolume<T, 3> for OBB<T> {
     }
 
     fn max(&self) -> Vector3<T> {
-        let min = self.transform.trafo_point(&self.half_size);
-        let max = self.transform.trafo_point(&(-self.half_size));
+        let min = self.transform.trafo_point(&(-self.half_size));
+        let max = self.transform.trafo_point(&self.half_size);
         Vector3::new(
             T::max(min.x, max.x),
             T::max(min.y, max.y),
@@ -61,7 +61,7 @@ impl<T: BaseFloat> BVIntersector<T, OBB<T>, 3> for OBB<T> {
             &other.transform.forward(),
             &(other.center() - self.center()),
             self.half_size.x, self.half_size.y, self.half_size.z,
-            other.half_size.x, other.half_size.y, self.half_size.z
+            other.half_size.x, other.half_size.y, other.half_size.z
         )
     }
 }

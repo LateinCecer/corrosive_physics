@@ -58,6 +58,7 @@ pub(crate) use err;
 /// of the system.
 /// This structure may be packaged into component data structures together with children objects,
 /// mesh-data, and other components.
+#[derive(Clone, Debug)]
 pub struct IS<T> {
     pub momentum: Vector3<T>,
     pub angular_mom: Vector3<T>,
@@ -66,6 +67,7 @@ pub struct IS<T> {
 }
 
 /// Data structure for the mass distributions of an inertial system.
+#[derive(Clone, Debug)]
 pub struct MassDistribution<T> {
     mass: T,
     center_of_mass: Vector3<T>,
@@ -74,6 +76,7 @@ pub struct MassDistribution<T> {
 }
 
 /// Data structure for a transformer state.
+#[derive(Clone, Debug)]
 pub struct Transformer<T> {
     pub pos: Vector3<T>,
     pub offset: Vector3<T>,
@@ -194,6 +197,16 @@ where T: BaseFloat {
         self.angular_mom += point.cross(imp);
     }
 
+    pub fn integrate(&mut self, t: T) {
+        self.state.pos += self.momentum.scale(t / self.mass.mass);
+        let rot = UnitQuaternion::new(self.get_angular_vel().scale(t));
+        self.state.rot = rot * self.state.rot;
+    }
+
+    pub fn sync(&mut self) {
+        self.state.update_transformation();
+    }
+
     /// Transforms a matrix value from the laboratory frame into the reference frame of the
     /// inertial system.
     pub fn trafo_into<C, ST>(&self, vec: &Matrix<T, Const<4>, C, ST>) -> OMatrix<T, Const<4>, C>
@@ -281,7 +294,7 @@ impl<T> Default for MassDistribution<T>
 where T: Scalar + Zero + One {
     fn default() -> Self {
         MassDistribution {
-            mass: T::zero(),
+            mass: T::one(),
             center_of_mass: Vector3::zeros(),
             inertia: Matrix3::identity(),
             inv_inertia: Matrix3::identity(),

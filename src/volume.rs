@@ -1,11 +1,11 @@
 use nalgebra::SVector;
 
-mod aabb;
-mod tlas;
-mod bvh;
+pub mod aabb;
+pub mod tlas;
+pub mod bvh;
 mod bvh_splitting;
-mod oriented;
-mod point;
+pub mod oriented;
+pub mod point;
 
 
 pub trait BoundingVolume<T, const DIM: usize> {

@@ -1,14 +1,15 @@
 use std::marker::PhantomData;
+use std::mem;
 use std::ops::{Index, IndexMut};
-use nalgebra::{SVector, Vector3};
+use nalgebra::{SVector};
 use crate::helper::BaseFloat;
 use crate::volume::aabb::AABB;
 use crate::volume::bvh::VecPool;
+use crate::volume::{BoundingVolume, BVIntersector};
 
 #[derive(Clone, Debug)]
 pub struct TLASNode<T: BaseFloat, const DIM: usize> {
-    min: SVector<T, DIM>,
-    max: SVector<T, DIM>,
+    aabb: AABB<T, DIM>,
     left_right: u32,
     blas: u32,
 }
@@ -18,8 +19,7 @@ impl<T: BaseFloat, const DIM: usize> TLASNode<T, DIM> {
     /// Creates a new TLAS node instance, where every value is initiated with zero.
     pub fn new() -> Self {
         TLASNode {
-            min: SVector::zeros(),
-            max: SVector::zeros(),
+            aabb: AABB::new(),
             left_right: 0,
             blas: 0,
         }
@@ -27,10 +27,13 @@ impl<T: BaseFloat, const DIM: usize> TLASNode<T, DIM> {
 
     /// Copies all values from the specified `other` TLAS node.
     pub fn copy_from(&mut self, other: &Self) {
-        self.min = other.min.clone();
-        self.max = other.max.clone();
+        self.aabb = other.aabb.clone();
         self.left_right = other.left_right.clone();
         self.blas = other.blas.clone();
+    }
+
+    pub fn aabb(&self) -> &AABB<T, DIM> {
+        &self.aabb
     }
 
     /// Returns true, only if the node is a leaf node.
@@ -86,8 +89,11 @@ pub trait TLASPool<T: Sized> : Index<usize, Output=T> + IndexMut<usize, Output=T
 }
 
 pub trait TLASElement<T: BaseFloat, const DIM: usize> {
+    type BV: BoundingVolume<T, DIM>;
+
     /// Returns an AABB that fully wraps around the TLAS element.
     fn wrap(&self) -> AABB<T, DIM>;
+    fn bounding_volume(&self) -> &Self::BV;
 }
 
 
@@ -109,9 +115,11 @@ impl<T: Sized> TLASPool<T> for VecPool<T> {
     }
 
     fn trim(&mut self, target_len: usize) {
-        while self.vec.len() > target_len {
-            self.vec.pop();
-        }
+        assert_eq!(target_len, 1);
+
+        let first = self.vec.remove(0);
+        self.vec.clear();
+        self.vec.push(first);
     }
 
     fn front(&self) -> Option<&T> {
@@ -145,6 +153,65 @@ pub struct TLAS<T: BaseFloat, B: Sized, NodePool: TLASPool<TLASNode<T, DIM>>, Bl
     _b: PhantomData<B>,
 }
 
+impl<T, B, const DIM: usize> TLAS<T, B, VecPool<TLASNode<T, DIM>>, VecPool<B>, DIM>
+where T: BaseFloat,
+      B: TLASElement<T, DIM> + Sized {
+
+    pub fn new(cap: usize) -> Self {
+        let mut tlas = TLAS {
+            nodes: VecPool::with_capacity(cap * 2),
+            blas: VecPool::with_capacity(cap),
+            _t: PhantomData::default(),
+            _b: PhantomData::default(),
+        };
+        tlas.nodes.push(TLASNode {
+            aabb: AABB::new(),
+            blas: 0,
+            left_right: 0
+        });
+
+        tlas
+    }
+}
+
+
+#[derive(Clone, Copy, Debug)]
+enum CondIndex {
+    S(usize),
+    N
+}
+
+impl PartialEq for CondIndex {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            CondIndex::S(i) => {
+                match other {
+                    CondIndex::S(j) => *i == *j,
+                    CondIndex::N => false
+                }
+            },
+            CondIndex::N => false
+        }
+    }
+}
+
+impl CondIndex {
+    fn matches_index(&self, i: usize) -> bool {
+        match self {
+            CondIndex::S(j) => *j == i,
+            CondIndex::N => false
+        }
+    }
+
+    fn unwrap(&self) -> &usize {
+        match self {
+            CondIndex::S(i) => i,
+            CondIndex::N => panic!("Invalid index")
+        }
+    }
+}
+
+
 impl<T, B, NodePool, BlasPool, const DIM: usize> TLAS<T, B, NodePool, BlasPool, DIM>
 where T: BaseFloat,
       B: TLASElement<T, DIM> + Sized,
@@ -162,10 +229,32 @@ where T: BaseFloat,
         &self.blas
     }
 
+    pub fn blas_mut(&mut self) -> &mut BlasPool {
+        &mut self.blas
+    }
+
+    pub fn refit(&mut self) {
+        // since a parent node is always further to the back of the tree, we can loop through here
+        // front-to-back
+        for i in 1..self.nodes.size() {
+            let node = &self.nodes[i];
+            if node.is_leaf() {
+                self.nodes[i].aabb = self.blas[node.blas as usize].wrap();
+            } else {
+                let left_child = &self.nodes[node.get_left_child() as usize].aabb;
+                let right_child = &self.nodes[node.get_right_child() as usize].aabb;
+
+                let mut aabb = node.aabb.clone();
+                aabb.adjust(left_child, right_child);
+                self.nodes[i].aabb = aabb;
+            }
+        }
+    }
+
     /// Rebuilds the TLAS bottom up.
     pub fn build(&mut self) {
         let mut node_idx = Vec::<usize>::with_capacity(self.blas.size());
-        let node_indices = self.blas.size();
+        let mut node_indices = self.blas.size();
 
         // set leaf nodes
         self.nodes.trim(1);
@@ -173,80 +262,76 @@ where T: BaseFloat,
             node_idx.push(self.nodes.size());
             let bounds = self.blas[i].wrap();
             self.nodes.push(TLASNode {
-                min: bounds.min,
-                max: bounds.max,
+                aabb: bounds,
                 blas: i as u32,
                 left_right: 0,
             });
         }
 
+        // eprintln!("init node len: {}", self.nodes.size());
+
         // use agglomerative clustering to build the TLAS (bottom-to-top)
-        let mut a = 0;
-        let mut b = match self.find_best_match(&node_idx, node_indices, a) {
-            Some(b) => b,
-            None => return
-        };
+        let mut a = CondIndex::S(0);
+        let mut b = self.find_best_match(&node_idx, node_indices, a);
         while node_indices > 1 {
-            let c = match self.find_best_match(&node_idx, node_indices, b) {
-                Some(c) => c,
-                None => break
-            };
+            let c = self.find_best_match(&node_idx, node_indices, b);
             if a == c {
-                let node_idx_a = node_idx[a];
-                let node_idx_b = node_idx[b];
+                let node_idx_a = node_idx[*a.unwrap()];
+                let node_idx_b = node_idx[*b.unwrap()];
 
                 let node_a = &self.nodes[node_idx_a];
                 let node_b = &self.nodes[node_idx_b];
-                node_idx[a] = self.nodes.size();
-                node_idx[b] = node_idx[node_indices - 1];
+                node_idx[*a.unwrap()] = self.nodes.size();
+                node_idx[*b.unwrap()] = node_idx[node_indices - 1];
 
 
-                let mut min = SVector::<T, DIM>::zeros();
-                let mut max = SVector::<T, DIM>::zeros();
-                for i in 0..DIM {
-                    min[i] = T::min(node_a.min[i], node_b.min[i]);
-                    max[i] = T::max(node_a.max[i], node_b.max[i]);
-                }
-
+                let mut aabb = AABB::new();
+                aabb.adjust(&node_a.aabb, &node_b.aabb);
                 self.nodes.push(TLASNode {
                     left_right: node_idx_a as u32 | ((node_idx_b as u32) << 16),
-                    min,
-                    max,
+                    aabb,
                     blas: 0
                 });
 
-                b = match self.find_best_match(&node_idx, node_indices, a) {
-                    Some(b) => b,
-                    None => break
-                };
+                node_indices -= 1;
+                b = self.find_best_match(&node_idx, node_indices, a);
             } else {
                 a = b;
                 b = c;
             }
         }
+        // eprintln!("nodes.len() = {}", self.nodes.size());
+
         // set root node
-        self.nodes[0] = self.nodes[node_idx[a]].clone();
+        self.nodes[0] = self.nodes[node_idx[*a.unwrap()]].clone();
+        // eprintln!("nodes:");
+        // for i in 0..self.nodes.size() {
+        //     eprintln!("  [{}]: {:?}     >>   left={},    >>   right={}",
+        //               i, self.nodes[i],
+        //               self.nodes[i].get_left_child(),
+        //               self.nodes[i].get_right_child());
+        // }
     }
 
     /// Finds the most cost-effective clustering partner for the node with id `list[a]`. For this,
     /// the `n` first entries in `list` are considered.
-    fn find_best_match(&self, list: &Vec<usize>, n: usize, a: usize) -> Option<usize> {
+    fn find_best_match(&self, list: &Vec<usize>, n: usize, a: CondIndex) -> CondIndex {
         let mut smallest = T::MAX;
-        let mut best_b = None;
+        let mut best_b = CondIndex::N;
 
         for b in 0..n {
-            if b == a {
-                break;
+            if a.matches_index(b) {
+                continue;
             }
 
-            let a_node = &self.nodes[list[a]];
+            let a_node = &self.nodes[list[*a.unwrap()]];
             let b_node = &self.nodes[list[b]];
 
             // calc wrapping node sizes
             let mut size = SVector::<T, DIM>::zeros();
             for i in 0..DIM {
-                size[i] = T::max(a_node.max[i], b_node.max[i])
-                    - T::min(a_node.min[i], b_node.min[i]);
+                size[i] = T::max(a_node.aabb.max[i], b_node.aabb.max[i])
+                    - T::min(a_node.aabb.min[i], b_node.aabb.min[i]);
             }
 
             // calc surface area estimate for cost analysis
@@ -254,11 +339,69 @@ where T: BaseFloat,
             for i in 0..DIM {
                 surface_area += size[i] * size[(i + 1) % DIM];
             }
+
+
             if surface_area < smallest {
                 smallest = surface_area;
-                best_b = Some(b);
+                best_b = CondIndex::S(b);
             }
         }
         return best_b;
+    }
+
+    pub fn intersect<I: BVIntersector<T, B::BV, DIM> + BVIntersector<T, AABB<T, DIM>, DIM>>(
+        &self, intersector: &I, node_idx: usize
+    ) -> Vec<&B> {
+
+        let mut v = Vec::<&B>::with_capacity(64);
+
+        let mut node = &self.nodes[node_idx];
+        let mut stack = [node; 64];
+        let mut stack_ptr = 0usize;
+
+        loop {
+            if node.is_leaf() {
+                if intersector.intersects(self.blas[node.blas as usize].bounding_volume()) {
+                    v.push(&self.blas[node.blas as usize]);
+                }
+
+                if stack_ptr == 0 {
+                    break;
+                } else {
+                    stack_ptr -= 1;
+                    node = stack[stack_ptr];
+                }
+            } else {
+                let mut child1 = &self.nodes[node.get_left_child() as usize];
+                let mut child2 = &self.nodes[node.get_right_child() as usize];
+
+                let mut inter1 = intersector.intersects(&child1.aabb);
+                let mut inter2 = intersector.intersects(&child2.aabb);
+                // -(for ray intersections, do ray sorting here)
+                if !inter1 {
+                    // if child 1 does not intersect the intersector, swap with child 2
+                    mem::swap(&mut child1, &mut child2);
+                    mem::swap(&mut inter1, &mut inter2);
+                }
+
+                if !inter1 {
+                    // both children do not intersect. Checkout stack
+                    if stack_ptr == 0 {
+                        break;
+                    } else {
+                        stack_ptr -= 1;
+                        node = stack[stack_ptr];
+                    }
+                } else {
+                    node = child1;
+                    // checkout child 1 first and save child 2 for later
+                    if inter2 {
+                        stack[stack_ptr] = child2;
+                        stack_ptr += 1;
+                    }
+                }
+            }
+        }
+        v
     }
 }
