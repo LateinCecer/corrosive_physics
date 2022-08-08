@@ -3,13 +3,24 @@ use crate::system::inertia::{IS, MassDistribution, Transformer};
 use crate::volume::aabb::AABB;
 use crate::volume::oriented::OBB;
 use crate::volume::tlas::TLASElement;
+
+#[cfg(feature="bevy_support")]
 use bevy::prelude::{Component, Res, Time};
+
+
 use nalgebra::Vector3;
 use crate::volume::BoundingVolume;
 
 
-
+#[cfg(feature="bevy_support")]
 #[derive(Clone, PartialEq, Component)]
+pub struct PhyEntityID {
+    pub world_id: u8,
+    pub chunk_id: usize,
+    pub entity_id: usize,
+}
+
+#[derive(Clone, PartialEq)]
 pub struct PhyEntityID {
     pub world_id: u8,
     pub chunk_id: usize,
@@ -39,7 +50,7 @@ impl<T: BaseFloat> PhyEntity<T> {
         self.obb.transform = self.is.state.clone();
     }
 
-    pub fn tick(&mut self, time: &Res<Time>) {
+    pub fn tick(&mut self, time: f64) {
         // TODO
 
     }

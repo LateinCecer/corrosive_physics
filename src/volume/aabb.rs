@@ -50,7 +50,7 @@ where T: BaseFloat {
 
     /// Grows the size of the AABB to wrap the specified point `p`. As the name of this method
     /// implies, this process can only grow the AABB, not shrink it to any extend.
-    pub fn grow(&mut self, p: &Vector3<T>) {
+    pub fn grow(&mut self, p: &SVector<T, DIM>) {
         for i in 0..DIM {
             self.min[i] = T::min(self.min[i], p[i]);
             self.max[i] = T::max(self.max[i], p[i]);

@@ -1,10 +1,15 @@
+#[cfg(feature="bevy_support")]
 use bevy::prelude::*;
+
 use nalgebra::Vector3;
 use corrosive_physics::engine::{PhysicsEngine};
 use corrosive_physics::system::object::{PhyEntity, PhyEntityID};
 use corrosive_physics::volume::BVIntersector;
 use corrosive_physics::volume::tlas::TLASElement;
 
+
+
+#[cfg(feature="bevy_support")]
 fn main() {
     println!("String test case 'Cubes'...");
     App::new()
@@ -15,9 +20,11 @@ fn main() {
         .run();
 }
 
+#[cfg(feature="bevy_support")]
 #[derive(Component)]
 struct Rotator;
 
+#[cfg(feature="bevy_support")]
 fn update(
     time: Res<Time>,
     mut query: Query<(&PhyEntityID, &mut Transform)>
@@ -70,6 +77,7 @@ fn update(
     engine.world.build();
 }
 
+#[cfg(feature="bevy_support")]
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -186,4 +194,9 @@ fn setup(
             .looking_at(Vec3::new(0.0, 5.0, 0.0), Vec3::Y),
         .. default()
     });
+}
+
+fn main() -> Result<(), ()> {
+    println!("Program was not compiled with bevy feature enabled");
+    Err(())
 }
