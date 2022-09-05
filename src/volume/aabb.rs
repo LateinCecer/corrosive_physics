@@ -10,6 +10,7 @@ pub struct AABB<T, const DIM: usize> {
     pub max: SVector<T, DIM>
 }
 
+
 impl<T, const DIM: usize> AABB<T, DIM>
 where T: BaseFloat {
     /// Creates a new AABB instance, where the min point is set the the base float's max and the
