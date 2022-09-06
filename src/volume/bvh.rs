@@ -164,7 +164,7 @@ where
 }
 
 impl<T, E, ElementPool, const DIM: usize> BVH<T, E, VecPool<BVHNode<T, DIM>>, ElementPool, DIM>
-where T: BaseFloat + From<usize>,
+where T: BaseFloat + From<u32>,
       E: BVHElement<T, DIM>,
       ElementPool: BVHElementPool<T, E, DIM> {
 
@@ -177,8 +177,13 @@ where T: BaseFloat + From<usize>,
     /// bvh.rebuild<BVHSplitting>();
     /// ``
     pub fn new(elements: ElementPool) -> Self {
+        let mut pool = VecPool::with_capacity(elements.capacity() * 2 - 1);
+        for _ in 0..pool.vec.capacity() {
+            pool.push(BVHNode::new());
+        }
+
         BVH {
-            pool: VecPool::with_capacity(elements.capacity() * 2 - 1),
+            pool,
             elements,
             root: 0,
             nodes_in_use: 1,
@@ -190,7 +195,7 @@ where T: BaseFloat + From<usize>,
 }
 
 impl<T, E, NodePool, ElementPool, const DIM: usize> BVH<T, E, NodePool, ElementPool, DIM>
-where T: BaseFloat + From<usize>,
+where T: BaseFloat + From<u32>,
       E: BVHElement<T, DIM>,
       NodePool: BVHPool<T, DIM>,
       ElementPool: BVHElementPool<T, E, DIM> {
@@ -236,7 +241,8 @@ where T: BaseFloat + From<usize>,
 
     /// Subdivides the node specified by `node_id` by using the specified splitting function.
     pub fn subdivide<SF: BVHSplitting<T, E, NodePool, ElementPool, DIM>>(
-        &mut self, node_id: usize) {
+        &mut self, node_id: usize
+    ) {
         let node = &self.pool[node_id];
 
         // split plane axis and position
@@ -313,7 +319,7 @@ where T: BaseFloat + From<usize>,
                 rightbox.grow_other(&element.wrap());
             }
         }
-        let cost = T::from(left_count) * leftbox.area() + T::from(right_count) * rightbox.area();
+        let cost = T::from(left_count as u32) * leftbox.area() + T::from(right_count as u32) * rightbox.area();
         if cost > T::zero() {
             cost
         } else {
@@ -323,7 +329,7 @@ where T: BaseFloat + From<usize>,
 
     /// Returns a cost approximation for searching the specified node.
     fn calc_node_cost(node: &BVHNode<T, DIM>) -> T {
-        T::from(node.num_prims) * node.aabb.area()
+        T::from(node.num_prims as u32) * node.aabb.area()
     }
 
     /// Returns a `Vec` to references of the member elements of this tree that intersect the
@@ -353,39 +359,97 @@ where T: BaseFloat + From<usize>,
                     stack_ptr -= 1;
                     node = stack[stack_ptr];
                 }
-                continue;
-            }
-
-            let mut child1 = &self.pool[node.left_first];
-            let mut child2 = &self.pool[node.right_child()];
-
-            let mut inter1 = intersector.intersects(&child1.aabb);
-            let mut inter2 = intersector.intersects(&child2.aabb);
-            // -(for ray intersections, do ray sorting here)-
-            if !inter1 && inter2 {
-                // if child 1 does not intersect the intersector, swap with child 2
-                mem::swap(&mut child1, &mut child2);
-                mem::swap(&mut inter1, &mut inter2);
-            }
-
-            if inter1 {
-                // both children do not intersect the intersector. Checkout stack
-                if stack_ptr == 0 {
-                    break;
-                } else {
-                    stack_ptr -= 1;
-                    node = stack[stack_ptr];
-                }
             } else {
-                node = child1;
-                // checkout child 1 first and save child 2 for later
-                if inter2 {
-                    stack[stack_ptr] = child2;
-                    stack_ptr += 1;
+                let mut child1 = &self.pool[node.left_first];
+                let mut child2 = &self.pool[node.right_child()];
+
+                let mut inter1 = intersector.intersects(&child1.aabb);
+                let mut inter2 = intersector.intersects(&child2.aabb);
+                // -(for ray intersections, do ray sorting here)-
+                if !inter1 {
+                    // if child 1 does not intersect the intersector, swap with child 2
+                    mem::swap(&mut child1, &mut child2);
+                    mem::swap(&mut inter1, &mut inter2);
+                }
+
+                if !inter1 {
+                    // both children do not intersect the intersector. Checkout stack
+                    if stack_ptr == 0 {
+                        break;
+                    } else {
+                        stack_ptr -= 1;
+                        node = stack[stack_ptr];
+                    }
+                } else {
+                    node = child1;
+                    // checkout child 1 first and save child 2 for later
+                    if inter2 {
+                        stack[stack_ptr] = child2;
+                        stack_ptr += 1;
+                    }
                 }
             }
         }
         v
+    }
+}
+
+
+
+
+#[cfg(test)]
+mod test {
+    use nalgebra::SVector;
+    use crate::volume::aabb::AABB;
+    use crate::volume::{BoundingVolume, bvh_splitting};
+    use crate::volume::bvh::{BVH, BVHElement, BVHNode, VecPool};
+
+    struct Test<const DIM: usize> {
+        bounds: AABB<f64, DIM>
+    }
+
+    impl<const DIM: usize> BoundingVolume<f64, DIM> for Test<DIM> {
+        fn center(&self) -> SVector<f64, DIM> {
+            self.bounds.center()
+        }
+
+        fn area(&self) -> f64 {
+            self.bounds.area()
+        }
+
+        fn min(&self) -> SVector<f64, DIM> {
+            self.bounds.min.clone()
+        }
+
+        fn max(&self) -> SVector<f64, DIM> {
+            self.bounds.max.clone()
+        }
+
+        fn size(&self) -> SVector<f64, DIM> {
+            self.bounds.size()
+        }
+
+        fn half_size(&self) -> SVector<f64, DIM> {
+            self.bounds.half_size()
+        }
+    }
+
+    impl<const DIM: usize> BVHElement<f64, DIM> for Test<DIM> {
+        fn centroid(&self) -> SVector<f64, DIM> {
+            self.bounds.center()
+        }
+
+        fn wrap(&self) -> AABB<f64, DIM> {
+            self.bounds.clone()
+        }
+    }
+
+    #[test]
+    fn test() {
+        let mut elements = VecPool::<Test<2>>::with_capacity(10);
+
+        let mut bvh = BVH::<f64, Test<2>, VecPool<BVHNode<f64, 2>>, VecPool<Test<2>>, 2>::new(elements);
+        bvh.rebuild::<bvh_splitting::BinnedSAHSplit<8>>();
     }
 }
 

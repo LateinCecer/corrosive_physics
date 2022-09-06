@@ -129,9 +129,9 @@ fn setup(
 
 
     let spacing = 2.0;
-    for y in 0..10 {
-        for x in 0..6 {
-            for z in 0..6 {
+    for y in 0..5 {
+        for x in 0..3 {
+            for z in 0..3 {
 
                 let cube_id = PhyEntityID {
                     world_id: 0,
@@ -189,13 +189,14 @@ fn setup(
         .. default()
     });
     // camera
-    commands.spawn_bundle(PerspectiveCameraBundle {
+    commands.spawn_bundle(Camera3dBundle {
         transform: Transform::from_xyz(10.0, 15.0, 15.0)
             .looking_at(Vec3::new(0.0, 5.0, 0.0), Vec3::Y),
         .. default()
     });
 }
 
+#[cfg(not(feature="bevy_support"))]
 fn main() -> Result<(), ()> {
     println!("Program was not compiled with bevy feature enabled");
     Err(())

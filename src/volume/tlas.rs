@@ -260,9 +260,8 @@ where T: BaseFloat,
         self.nodes.trim(1);
         for i in 0..self.blas.size() {
             node_idx.push(self.nodes.size());
-            let bounds = self.blas[i].wrap();
             self.nodes.push(TLASNode {
-                aabb: bounds,
+                aabb: self.blas[i].wrap(),
                 blas: i as u32,
                 left_right: 0,
             });
@@ -271,24 +270,24 @@ where T: BaseFloat,
         // eprintln!("init node len: {}", self.nodes.size());
 
         // use agglomerative clustering to build the TLAS (bottom-to-top)
-        let mut a = CondIndex::S(0);
+        let mut a = 0_i32;
         let mut b = self.find_best_match(&node_idx, node_indices, a);
         while node_indices > 1 {
             let c = self.find_best_match(&node_idx, node_indices, b);
             if a == c {
-                let node_idx_a = node_idx[*a.unwrap()];
-                let node_idx_b = node_idx[*b.unwrap()];
+                let node_idx_a = node_idx[a as usize];
+                let node_idx_b = node_idx[b as usize];
 
                 let node_a = &self.nodes[node_idx_a];
                 let node_b = &self.nodes[node_idx_b];
-                node_idx[*a.unwrap()] = self.nodes.size();
-                node_idx[*b.unwrap()] = node_idx[node_indices - 1];
+                node_idx[a as usize] = self.nodes.size();
+                node_idx[b as usize] = node_idx[node_indices - 1];
 
 
                 let mut aabb = AABB::new();
                 aabb.adjust(&node_a.aabb, &node_b.aabb);
                 self.nodes.push(TLASNode {
-                    left_right: node_idx_a as u32 | ((node_idx_b as u32) << 16),
+                    left_right: node_idx_a as u32 + ((node_idx_b as u32) << 16),
                     aabb,
                     blas: 0
                 });
@@ -303,7 +302,7 @@ where T: BaseFloat,
         // eprintln!("nodes.len() = {}", self.nodes.size());
 
         // set root node
-        self.nodes[0] = self.nodes[node_idx[*a.unwrap()]].clone();
+        self.nodes[0] = self.nodes[node_idx[a as usize]].clone();
         // eprintln!("nodes:");
         // for i in 0..self.nodes.size() {
         //     eprintln!("  [{}]: {:?}     >>   left={},    >>   right={}",
@@ -315,16 +314,16 @@ where T: BaseFloat,
 
     /// Finds the most cost-effective clustering partner for the node with id `list[a]`. For this,
     /// the `n` first entries in `list` are considered.
-    fn find_best_match(&self, list: &Vec<usize>, n: usize, a: CondIndex) -> CondIndex {
+    fn find_best_match(&self, list: &Vec<usize>, n: usize, a: i32) -> i32 {
         let mut smallest = T::MAX;
-        let mut best_b = CondIndex::N;
+        let mut best_b = -1_i32;
 
         for b in 0..n {
-            if a.matches_index(b) {
+            if b as i32 == a {
                 continue;
             }
 
-            let a_node = &self.nodes[list[*a.unwrap()]];
+            let a_node = &self.nodes[list[a as usize]];
             let b_node = &self.nodes[list[b]];
 
             // calc wrapping node sizes
@@ -343,7 +342,7 @@ where T: BaseFloat,
 
             if surface_area < smallest {
                 smallest = surface_area;
-                best_b = CondIndex::S(b);
+                best_b = b as i32;
             }
         }
         return best_b;

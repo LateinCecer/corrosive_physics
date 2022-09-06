@@ -25,7 +25,7 @@ where E: BVHElement<T, DIM>,
 
 
 pub struct FullSAHSplit {}
-impl<T: BaseFloat + From<usize>, E, NPool, EPool, const DIM: usize> BVHSplitting<T, E, NPool, EPool, DIM>
+impl<T: BaseFloat + From<u32>, E, NPool, EPool, const DIM: usize> BVHSplitting<T, E, NPool, EPool, DIM>
 for FullSAHSplit
 where E: BVHElement<T, DIM>,
       NPool: BVHPool<T, DIM>,
@@ -41,6 +41,7 @@ where E: BVHElement<T, DIM>,
         for i in 0..*node.num_prims() {
             let element = &bvh.elements[node.left_child() + i];
             for axis in 0..DIM {
+                // println!("      searching axis {axis}");
                 let candidate_pos = element.centroid()[axis];
                 let cost = bvh.eval_sah(node, axis, candidate_pos);
                 if cost < best_cost {
@@ -75,7 +76,7 @@ macro_rules! axis_min_max {
 
 
 pub struct MidpointSAHSplit {}
-impl<T: BaseFloat + From<usize>, E, NPool, EPool, const DIM: usize> BVHSplitting<T, E, NPool, EPool, DIM>
+impl<T: BaseFloat + From<u32>, E, NPool, EPool, const DIM: usize> BVHSplitting<T, E, NPool, EPool, DIM>
 for MidpointSAHSplit
 where E: BVHElement<T, DIM>,
       NPool: BVHPool<T, DIM>,
@@ -112,7 +113,7 @@ where E: BVHElement<T, DIM>,
 
 
 pub struct PartialSAHSplit<const NUM_PLANES: usize> {}
-impl<T: BaseFloat + From<usize>, E, NPool, EPool, const NUM_PLANES: usize, const DIM: usize>
+impl<T: BaseFloat + From<u32>, E, NPool, EPool, const NUM_PLANES: usize, const DIM: usize>
 BVHSplitting<T, E, NPool, EPool, DIM>
 for PartialSAHSplit<NUM_PLANES>
 where E: BVHElement<T, DIM>,
@@ -120,7 +121,7 @@ where E: BVHElement<T, DIM>,
       EPool: BVHElementPool<T, E, DIM> {
 
     fn find(bvh: &BVH<T, E, NPool, EPool, DIM>, node: &BVHNode<T, DIM>) -> BVHSplit<T> {
-        let r_num_planes = T::one() / T::from(NUM_PLANES);
+        let r_num_planes = T::one() / T::from(NUM_PLANES as u32);
 
         let mut best_cost = T::MAX;
         let mut split_pos = T::zero();
@@ -134,7 +135,7 @@ where E: BVHElement<T, DIM>,
             if bounds_min != bounds_max {
                 let scale = (bounds_max - bounds_min) * r_num_planes;
                 for i in 1..NUM_PLANES {
-                    let candidate_pos = bounds_min + T::from(i) * scale;
+                    let candidate_pos = bounds_min + T::from(i as u32) * scale;
                     let cost = bvh.eval_sah(node, axis, candidate_pos);
                     if cost < best_cost {
                         split_pos = candidate_pos;
@@ -177,7 +178,7 @@ impl<T: BaseFloat, const DIM: usize> Bin<T, DIM> {
 
 pub struct BinnedSAHSplit<const NUM_BINS: usize> {}
 
-impl<T: BaseFloat + From<usize> + Into<usize>, E, NPool, EPool, const NUM_BINS: usize, const DIM: usize>
+impl<T: BaseFloat + From<u32>, E, NPool, EPool, const NUM_BINS: usize, const DIM: usize>
 BVHSplitting<T, E, NPool, EPool, DIM>
 for BinnedSAHSplit<NUM_BINS>
 where E: BVHElement<T, DIM>,
@@ -185,7 +186,7 @@ where E: BVHElement<T, DIM>,
       EPool: BVHElementPool<T, E, DIM> {
 
     fn find(bvh: &BVH<T, E, NPool, EPool, DIM>, node: &BVHNode<T, DIM>) -> BVHSplit<T> {
-        let r_num_bins = T::one() / T::from(NUM_BINS);
+        let r_num_bins = T::one() / T::from(NUM_BINS as u32);
 
         let mut best_cost = T::MAX;
         let mut split_pos = T::zero();
@@ -210,12 +211,12 @@ where E: BVHElement<T, DIM>,
             // reset base
             bins.iter_mut().for_each(Bin::<T, DIM>::reset);
             // populate bins
-            let mut scale = T::from(NUM_BINS) / (bounds_max - bounds_min);
+            let mut scale = T::from(NUM_BINS as u32) / (bounds_max - bounds_min);
             for i in 0..*node.num_prims() {
                 let element = &bvh.elements[node.left_child() + i];
                 let bin_idx = usize::min(
                     NUM_BINS - 1,
-                    <T as Into<usize>>::into((element.centroid()[axis] - bounds_min) * scale));
+                    T::floor_to_u32((element.centroid()[axis] - bounds_min) * scale) as usize);
                 bins[bin_idx].prime_count += 1;
                 bins[bin_idx].aabb.grow_other(&element.wrap());
             }
@@ -240,12 +241,12 @@ where E: BVHElement<T, DIM>,
             // calculate SAH cost for the planes
             scale = (bounds_max - bounds_min) * r_num_bins;
             for i in 0..(NUM_BINS - 1) {
-                let plane_cost = T::from(left_count[i]) * left_area[i]
-                    + T::from(right_count[i]) * right_area[i];
+                let plane_cost = T::from(left_count[i] as u32) * left_area[i]
+                    + T::from(right_count[i] as u32) * right_area[i];
 
                 if plane_cost < best_cost {
                     best_axis = axis;
-                    split_pos = bounds_min + scale * (T::from(i) + T::one());
+                    split_pos = bounds_min + scale * (T::from(i as u32) + T::one());
                     best_cost = plane_cost;
                 }
             }

@@ -3,7 +3,7 @@ use nalgebra::SVector;
 pub mod aabb;
 pub mod tlas;
 pub mod bvh;
-mod bvh_splitting;
+pub mod bvh_splitting;
 pub mod oriented;
 pub mod point;
 

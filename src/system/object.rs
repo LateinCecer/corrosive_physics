@@ -20,6 +20,7 @@ pub struct PhyEntityID {
     pub entity_id: usize,
 }
 
+#[cfg(not(feature="bevy_support"))]
 #[derive(Clone, PartialEq)]
 pub struct PhyEntityID {
     pub world_id: u8,
