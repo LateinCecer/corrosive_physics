@@ -1,6 +1,6 @@
 [package]
 name = "corrosive_physics"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 
 [features]
@@ -12,7 +12,7 @@ bevy_support = ["bevy"]
 
 # math
 num = "0.4.0"
-nalgebra = { version="0.31.1", features=["serde-serialize"]}
+nalgebra = { version="0.32.2", features=["serde-serialize"]}
 delaunator = "1.0.1"
 
 # multithreading
