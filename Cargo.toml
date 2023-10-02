@@ -1,6 +1,6 @@
 [package]
 name = "corrosive_physics"
-version = "0.1.4"
+version = "0.1.3"
 edition = "2021"
 
 [features]
@@ -11,21 +11,21 @@ bevy_support = ["bevy"]
 [dependencies]
 
 # math
-num = "0.4.1"
-nalgebra = { version="0.32.3", features=["serde-serialize"]}
-delaunator = "1.0.2"
+num = "0.4.0"
+nalgebra = { version="0.32.2", features=["serde-serialize"]}
+delaunator = "1.0.1"
 
 # multithreading
-rayon = "1.8.0"
+rayon = "1.5.3"
 parking_lot = "0.12.1"
 
 # encoding
-serde = "1.0.188"
+serde = "1.0.144"
 bincode = "1.3.3"
 byteorder = "1.4.3"
 
-mlua = { version="0.9.1", features=["luajit52", "vendored"]}
-bevy = { version="0.11.3", optional = true }
+mlua = { version="0.8.3", features=["luajit52", "vendored"]}
+bevy = { version="0.8.1", optional = true }
 
 [profile.dev]
 opt-level = 1
